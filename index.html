@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NJ-WARMD - Water Antibiotic Resistance Monitoring Dashboard</title>
+  
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  
+  <!-- Custom Gov-Aesthetic CSS -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Loading Screen Overlay -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <h2 style="font-weight: 600; margin-bottom: 0.25rem;">NJ-WARMD</h2>
+    <p style="font-size: 0.9rem; color: #94a3b8;">Loading statewide monitoring database (30,000+ records)...</p>
+  </div>
+
+  <!-- Header Bar -->
+  <header>
+    <div class="header-container">
+      <div class="logo-section">
+        <h1>NJ Water Antibiotic Resistance Monitoring</h1>
+        <p>DEP Clean Water Monitoring Pilot Program • Senate Bill S3745 Section 3(a)</p>
+      </div>
+      <nav id="top-nav">
+        <button class="active" data-tab="map">Map</button>
+        <button data-tab="trends">Trends</button>
+        <button data-tab="upload">Upload</button>
+        <button data-tab="compliance">Compliance</button>
+        <button data-tab="research">Research</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Sticky Alert Banner (Only shown when alerts exist) -->
+  <div id="sticky-alert" class="sticky-alert-banner" style="display: none;">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <span>⚠️</span>
+      <span id="sticky-alert-text">0 active water system alerts detected</span>
+    </div>
+    <button id="view-alerts-btn">View Details & Action Templates</button>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="app-container">
+
+    <!-- 1. Map Tab -->
+    <section id="tab-map" class="tab-content">
+      <!-- Filter controls -->
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label for="filter-site-type">Site Type</label>
+          <select id="filter-site-type">
+            <option value="ALL">All Types</option>
+            <option value="WWTP">Wastewater Treatment Plant (WWTP)</option>
+            <option value="HOSPITAL">Hospital Outfall</option>
+            <option value="SURFACE_WATER">Surface Water Body</option>
+            <option value="AGRICULTURAL">Agricultural Runoff Node</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="filter-drug-class">Drug Class Resistance</label>
+          <select id="filter-drug-class">
+            <option value="ALL">All Classes</option>
+            <option value="carbapenem">Carbapenems</option>
+            <option value="cephalosporin">Cephalosporins</option>
+            <option value="methicillin">Methicillin</option>
+            <option value="vancomycin">Vancomycin</option>
+            <option value="polymyxin">Polymyxins (Colistin)</option>
+            <option value="aminoglycoside">Aminoglycosides</option>
+            <option value="fluoroquinolone">Fluoroquinolones</option>
+            <option value="tetracycline">Tetracyclines</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-phase">Pilot Phase</label>
+          <select id="filter-phase">
+            <option value="ALL">All Phases</option>
+            <option value="1">Phase 1 (Months 1-8)</option>
+            <option value="2">Phase 2 (Months 9-16)</option>
+            <option value="3">Phase 3 (Months 17-24)</option>
+          </select>
+        </div>
+
+        <div class="filter-group slider-container">
+          <div class="slider-label">
+            <span>Pilot Timeline (Date Slider)</span>
+            <span id="slider-date-display" style="color: var(--accent-blue);">2026-12-31</span>
+          </div>
+          <input type="range" id="filter-date-slider" min="0" max="730" value="730" style="width: 100%; cursor: pointer;" />
+        </div>
+      </div>
+
+      <!-- Map & Sidebar drawer layout -->
+      <div class="map-container-wrapper">
+        <div id="map"></div>
+        
+        <!-- Sliding detail drawer -->
+        <div id="map-drawer" class="right-drawer">
+          <div class="drawer-header">
+            <h3 id="drawer-site-name">Monitoring Site Details</h3>
+            <button class="drawer-close" id="drawer-close-btn">&times;</button>
+          </div>
+          <div class="drawer-content">
+            <div class="drawer-section">
+              <h4 id="drawer-site-id-label">Site ID</h4>
+              <div class="drawer-grid">
+                <div class="drawer-val"><strong style="color: #64748b; font-weight: 500;">Type</strong><span id="drawer-site-type">WWTP</span></div>
+                <div class="drawer-val"><strong style="color: #64748b; font-weight: 500;">County</strong><span id="drawer-site-county">Bergen</span></div>
+                <div class="drawer-val" style="grid-column: span 2; margin-top: 0.25rem;"><strong style="color: #64748b; font-weight: 500;">Municipality</strong><span id="drawer-site-municipality">Little Ferry</span></div>
+              </div>
+            </div>
+            
+            <div class="drawer-section">
+              <h4>Current Compliance Status</h4>
+              <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.75rem;">
+                <span id="drawer-status-badge" class="badge badge-clear">✔ Compliant</span>
+              </div>
+            </div>
+
+            <div class="drawer-section">
+              <h4>Schedules & Timeline</h4>
+              <div class="drawer-grid">
+                <div class="drawer-val"><strong>Monitoring Tier</strong><span id="drawer-tier">Monthly</span></div>
+                <div class="drawer-val"><strong>Last Sample</strong><span id="drawer-last-sample">-</span></div>
+                <div class="drawer-val" style="grid-column: span 2; margin-top: 0.25rem;"><strong>Next Sample Due</strong><span id="drawer-next-due">-</span></div>
+              </div>
+            </div>
+
+            <div class="drawer-section">
+              <h4>12-Week Detection History</h4>
+              <div class="sparkline-container">
+                <div id="drawer-sparkline-svg-placeholder"></div>
+                <div class="sparkline-legend">
+                  <span>12 weeks ago</span>
+                  <span>Current Week</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Trends Tab -->
+    <section id="tab-trends" class="tab-content hidden">
+      <!-- Statewide Status Area -->
+      <div class="card">
+        <h2>Statewide Monitoring Node Status Trends (104 Weeks)</h2>
+        <div style="height: 380px; position: relative;">
+          <canvas id="statewide-trends-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Site level detail view & aggregates -->
+      <div class="site-chart-grid">
+        <!-- Site level bar chart -->
+        <div class="card">
+          <h2>Site Concentration Profiles</h2>
+          <div class="site-select-container">
+            <label for="trends-site-select">Select Monitoring Node:</label>
+            <select id="trends-site-select" style="max-width: 320px;"></select>
+          </div>
+          <div style="height: 300px; position: relative;">
+            <canvas id="site-profile-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Full canonical record details card -->
+        <div class="card">
+          <h2>Sample Record Detail</h2>
+          <div id="record-details-container">
+            <p style="color: #64748b; font-style: italic;">Click a bar on the concentration chart to inspect the raw laboratory results.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- County level aggregates panel -->
+      <div class="card">
+        <h2>Statewide County Risk & Aggregated Analysis</h2>
+        <div class="table-wrapper">
+          <table class="data-table" id="county-aggregates-table">
+            <thead>
+              <tr>
+                <th>County</th>
+                <th>Total Samples</th>
+                <th>Confirmed Detections</th>
+                <th>Detection Rate (%)</th>
+                <th>Primary Resistance Profile</th>
+                <th>Regional Compliance Rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Upload Tab -->
+    <section id="tab-upload" class="tab-content hidden">
+      <div class="upload-container">
+        
+        <!-- Upload forms/zones -->
+        <div class="card">
+          <h2>Lab Output Pipeline</h2>
+          
+          <div style="margin-bottom: 1.25rem;">
+            <label for="operator-name" style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.35rem; color: var(--navy-light);">Operator / Submitter Name</label>
+            <input type="text" id="operator-name" value="DEP Analyst" placeholder="Enter name..." />
+          </div>
+
+          <div style="margin-bottom: 1.25rem;">
+            <label style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.35rem; color: var(--navy-light);">Device/Platform Selector</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="device-type-select" value="PCR" checked>
+                <span>PCR machine</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="device-type-select" value="BIOSENSOR">
+                <span>Biosensor</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="device-type-select" value="METAGENOMICS">
+                <span>Metagenomic (CARD-RGI report)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="device-type-select" value="MICROFLUIDIC">
+                <span>Microfluidic device</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="drag-drop-zone" class="drag-zone">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+            </svg>
+            <p style="font-weight: 600; font-size: 0.9rem; color: var(--navy-light);">Drag your lab export here</p>
+            <span style="font-size: 0.8rem; color: #64748b;">or click to browse local files</span>
+            <input type="file" id="file-input" accept=".csv,.json" style="display: none;" />
+          </div>
+        </div>
+
+        <!-- Right Side: Preview & normalization result -->
+        <div>
+          <!-- Success Notification Banner -->
+          <div id="upload-success-banner" class="success-banner" style="display: none;">
+            <h3>✔ Batch Submitted Successfully</h3>
+            <p id="upload-success-intro">The normalized laboratory records have been merged into the central database.</p>
+            <ul id="upload-success-details">
+              <!-- Dynamically populated details -->
+            </ul>
+          </div>
+
+          <div class="card" id="preview-panel" style="display: none;">
+            <h2>Data Normalization & Validation Preview</h2>
+            
+            <div id="preview-summary-row" class="preview-summary">
+              0 records processed · 0 accepted · 0 errors
+            </div>
+
+            <h3 style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--navy-light); margin-bottom: 0.5rem;">Accepted Records (showing first 10)</h3>
+            <div class="table-wrapper">
+              <table class="data-table" id="preview-table">
+                <thead>
+                  <tr>
+                    <th>Site Name</th>
+                    <th>Sample Date</th>
+                    <th>Target Name</th>
+                    <th>Detected</th>
+                    <th>Concentration</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Errors Accordion -->
+            <div class="accordion" id="errors-accordion" style="display: none;">
+              <div class="accordion-header" id="errors-accordion-toggle">
+                <span>Normalization Errors (<span id="error-count-badge">0</span>)</span>
+                <span id="accordion-arrow">▼</span>
+              </div>
+              <div class="accordion-body" id="errors-accordion-body" style="display: none;">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+              <button class="btn btn-secondary" id="preview-cancel-btn">Cancel</button>
+              <button class="btn" id="preview-submit-btn">Submit to Central Database</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 4. Compliance Tracker -->
+    <section id="tab-compliance" class="tab-content hidden">
+      <!-- Summary stats row -->
+      <div class="grid-3 compliance-summary-grid">
+        <div class="metric-card">
+          <div class="metric-val" id="metric-compliance-rate">0%</div>
+          <div class="metric-label">Sites Meeting 90% Reduction Standard</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-val" id="metric-active-alerts" style="color: var(--status-alert-text);">0</div>
+          <div class="metric-label">Active Water System Alerts</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-val" id="metric-days-left">0</div>
+          <div class="metric-label">Days Remaining in Pilot (730d)</div>
+        </div>
+      </div>
+
+      <!-- Search & sorting controls -->
+      <div class="card">
+        <h2>Regional Compliance Monitoring Directory</h2>
+        
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
+          <input type="text" id="compliance-search-input" placeholder="Search by site name, county, or municipality..." style="max-width: 400px; flex: 1;" />
+          <select id="compliance-status-filter" style="max-width: 200px;">
+            <option value="ALL">All Compliance Levels</option>
+            <option value="compliant">Compliant</option>
+            <option value="borderline">Borderline</option>
+            <option value="overdue">Overdue</option>
+            <option value="non_compliant">Non-Compliant</option>
+          </select>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-table compliance-table" id="compliance-directory-table">
+            <thead>
+              <tr>
+                <th data-sort="name">Site Name ↕</th>
+                <th data-sort="county">County ↕</th>
+                <th data-sort="phase">Phase ↕</th>
+                <th data-sort="tier">Monitoring Tier ↕</th>
+                <th data-sort="last_sample">Last Submission ↕</th>
+                <th data-sort="next_due">Next Due Date ↕</th>
+                <th data-sort="rate">90-Day Det. Rate ↕</th>
+                <th data-sort="status">Compliance Status ↕</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Research Tab -->
+    <section id="tab-research" class="tab-content hidden">
+      <div class="research-layout">
+        
+        <!-- Left: County Choropleth map -->
+        <div class="card">
+          <h2>New Jersey Regional Epidemiological Mapping</h2>
+          <div class="research-controls">
+            <button class="btn btn-secondary active" id="btn-metric-arg">ARG Detection Rate</button>
+            <button class="btn btn-secondary" id="btn-metric-alzheimers">Alzheimer's Rate</button>
+            <button class="btn btn-secondary" id="btn-metric-parkinsons">Parkinson's Rate</button>
+          </div>
+          <div class="research-map-wrapper">
+            <div id="research-map" style="width:100%; height:100%;"></div>
+          </div>
+        </div>
+
+        <!-- Right: Correlation scatter plot -->
+        <div class="card">
+          <h2>Environmental ARG vs. Neurodegenerative Disease Correlation</h2>
+          <div style="display: flex; gap: 1.5rem; align-items: center; margin-bottom: 0.75rem;">
+            <span style="font-size: 0.9rem; font-weight: 600;">Disease Target:</span>
+            <label class="radio-label">
+              <input type="radio" name="scatter-disease-select" value="alzheimers" checked>
+              <span>Alzheimer's Disease</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="scatter-disease-select" value="parkinsons">
+              <span>Parkinson's Disease</span>
+            </label>
+          </div>
+          <div style="height: 350px; position: relative; margin-top: 0.5rem;">
+            <canvas id="research-scatter-chart"></canvas>
+          </div>
+          
+          <div class="disclaimer-box">
+            <strong>Epidemiological Disclaimer:</strong> Correlation does not imply causation. This visualization surfaces potential geographic associations for further epidemiological investigation, consistent with the mandate of NJ S3745 Section 3(a)(2)(b). No causal relationship between environmental ARG/ARB exposure and neurodegenerative disease is claimed or implied.
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Alerts Modal Component -->
+  <div id="alerts-modal" class="modal-backdrop">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2 id="modal-title">Active Public Water System Alerts</h2>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-alerts-content">
+        <!-- Dynamically populated cards -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Papa Parse (CSV Parser) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+  <!-- Chart.js Annotation Plugin -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+
+  <!-- Leaflet Map JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+  <!-- Main Application Orchestration Module -->
+  <script type="module" src="app.js"></script>
+
+</body>
+</html>
