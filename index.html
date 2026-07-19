@@ -24,15 +24,15 @@
   <header>
     <div class="header-container">
       <div class="logo-section">
-        <h1>NJ Water Antibiotic Resistance Monitoring</h1>
-        <p>DEP Clean Water Monitoring Pilot Program • Senate Bill S3745 Section 3(a)</p>
+        <h1>New Jersey Clean Water Monitoring Portal</h1>
+        <p>DEP Clean Water Monitoring Pilot Program • Water System Pathogen & Resistance Tracking (P.L. 2026, c. 4000)</p>
       </div>
       <nav id="top-nav">
-        <button class="active" data-tab="map">Map</button>
-        <button data-tab="trends">Trends</button>
-        <button data-tab="upload">Upload</button>
-        <button data-tab="compliance">Compliance</button>
-        <button data-tab="research">Research</button>
+        <button class="active" data-tab="map">GIS Monitoring Map</button>
+        <button data-tab="trends">Trend Analysis</button>
+        <button data-tab="upload">Lab Data Submission</button>
+        <button data-tab="compliance">Regulatory Compliance</button>
+        <button data-tab="research">Epidemiological Research</button>
       </nav>
     </div>
   </header>
@@ -60,7 +60,7 @@
             <option value="WWTP">Wastewater Treatment Plant (WWTP)</option>
             <option value="HOSPITAL">Hospital Outfall</option>
             <option value="SURFACE_WATER">Surface Water Body</option>
-            <option value="AGRICULTURAL">Agricultural Runoff Node</option>
+            <option value="AGRICULTURAL">Agricultural Runoff Station</option>
           </select>
         </div>
         
@@ -105,7 +105,7 @@
         <!-- Sliding detail drawer -->
         <div id="map-drawer" class="right-drawer">
           <div class="drawer-header">
-            <h3 id="drawer-site-name">Monitoring Site Details</h3>
+            <h3 id="drawer-site-name">Station Details</h3>
             <button class="drawer-close" id="drawer-close-btn">&times;</button>
           </div>
           <div class="drawer-content">
@@ -153,7 +153,7 @@
     <section id="tab-trends" class="tab-content hidden">
       <!-- Statewide Status Area -->
       <div class="card">
-        <h2>Statewide Monitoring Node Status Trends (104 Weeks)</h2>
+        <h2>Statewide Water Quality Monitoring Station Status Trends (2-Year Pilot)</h2>
         <div style="height: 380px; position: relative;">
           <canvas id="statewide-trends-chart"></canvas>
         </div>
@@ -163,9 +163,9 @@
       <div class="site-chart-grid">
         <!-- Site level bar chart -->
         <div class="card">
-          <h2>Site Concentration Profiles</h2>
+          <h2>Station Concentration Time-Series Profiles</h2>
           <div class="site-select-container">
-            <label for="trends-site-select">Select Monitoring Node:</label>
+            <label for="trends-site-select">Select Monitoring Station:</label>
             <select id="trends-site-select" style="max-width: 320px;"></select>
           </div>
           <div style="height: 300px; position: relative;">
@@ -175,7 +175,7 @@
 
         <!-- Full canonical record details card -->
         <div class="card">
-          <h2>Sample Record Detail</h2>
+          <h2>Sample Analysis Detail</h2>
           <div id="record-details-container">
             <p style="color: #64748b; font-style: italic;">Click a bar on the concentration chart to inspect the raw laboratory results.</p>
           </div>
@@ -184,7 +184,7 @@
 
       <!-- County level aggregates panel -->
       <div class="card">
-        <h2>Statewide County Risk & Aggregated Analysis</h2>
+        <h2>Statewide County-Level Detection & Risk Summary</h2>
         <div class="table-wrapper">
           <table class="data-table" id="county-aggregates-table">
             <thead>
@@ -211,7 +211,7 @@
         
         <!-- Upload forms/zones -->
         <div class="card">
-          <h2>Lab Output Pipeline</h2>
+          <h2>Laboratory Data Submission Portal</h2>
           
           <div style="margin-bottom: 1.25rem;">
             <label for="operator-name" style="font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.35rem; color: var(--navy-light);">Operator / Submitter Name</label>
@@ -262,13 +262,13 @@
           </div>
 
           <div class="card" id="preview-panel" style="display: none;">
-            <h2>Data Normalization & Validation Preview</h2>
+            <h2>Data Normalization & Regulatory Validation Preview</h2>
             
             <div id="preview-summary-row" class="preview-summary">
               0 records processed · 0 accepted · 0 errors
             </div>
 
-            <h3 style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--navy-light); margin-bottom: 0.5rem;">Accepted Records (showing first 10)</h3>
+            <h3 style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--navy-light); margin-bottom: 0.5rem;">Validated Laboratory Records (First 10 Shown)</h3>
             <div class="table-wrapper">
               <table class="data-table" id="preview-table">
                 <thead>
@@ -328,7 +328,7 @@
 
       <!-- Search & sorting controls -->
       <div class="card">
-        <h2>Regional Compliance Monitoring Directory</h2>
+        <h2>Statewide Water System Compliance Directory</h2>
         
         <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
           <input type="text" id="compliance-search-input" placeholder="Search by site name, county, or municipality..." style="max-width: 400px; flex: 1;" />
@@ -369,7 +369,7 @@
         
         <!-- Left: County Choropleth map -->
         <div class="card">
-          <h2>New Jersey Regional Epidemiological Mapping</h2>
+          <h2>New Jersey County-Level Environmental Mapping</h2>
           <div class="research-controls">
             <button class="btn btn-secondary active" id="btn-metric-arg">ARG Detection Rate</button>
             <button class="btn btn-secondary" id="btn-metric-alzheimers">Alzheimer's Rate</button>
@@ -382,7 +382,7 @@
 
         <!-- Right: Correlation scatter plot -->
         <div class="card">
-          <h2>Environmental ARG vs. Neurodegenerative Disease Correlation</h2>
+          <h2>Environmental Resistance (ARG) vs. Neurodegenerative Mortality Correlation</h2>
           <div style="display: flex; gap: 1.5rem; align-items: center; margin-bottom: 0.75rem;">
             <span style="font-size: 0.9rem; font-weight: 600;">Disease Target:</span>
             <label class="radio-label">

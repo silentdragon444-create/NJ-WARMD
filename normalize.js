@@ -43,6 +43,7 @@ function levenshtein(a, b) {
   }
   return dp[m][n];
 }
+
 const fuzzyCache = new Map();
 
 function fuzzyMatchTarget(targetName) {
@@ -52,34 +53,29 @@ function fuzzyMatchTarget(targetName) {
     return fuzzyCache.get(lowerInput);
   }
   
-  // First check for exact or very close match using string similarity
   let bestKey = null;
   let bestDist = Infinity;
   
   for (const key of Object.keys(aroLookup)) {
     const lowerKey = key.toLowerCase();
     
-    // Quick exact match check
     if (lowerInput === lowerKey) {
       fuzzyCache.set(lowerInput, key);
       return key;
     }
     
-    // Quick prefix/suffix check - skip if too different
-    // If the first 3 chars don't match, the Levenshtein distance will be at least 3
+    // skip if first two chars both differ — levenshtein would be >= 3 anyway
     if (lowerInput.length >= 3 && lowerKey.length >= 3) {
       if (lowerInput[0] !== lowerKey[0] && lowerInput[1] !== lowerKey[1]) {
         continue;
       }
     }
     
-    // Compute Levenshtein distance
     const dist = levenshtein(lowerInput, lowerKey);
     if (dist < bestDist) {
       bestDist = dist;
       bestKey = key;
       
-      // Early termination if we found a perfect match
       if (bestDist === 0) {
         fuzzyCache.set(lowerInput, bestKey);
         return bestKey;
@@ -139,7 +135,7 @@ function parsePCR(rawRow) {
 
   const canonicalKey = resolveTarget(targetName);
   if (!canonicalKey) {
-    throw new NormalizationError(`Unrecognized target "${targetName}" — not in ARO lookup`, { field: 'TargetName', row: rawRow, deviceType: 'PCR' });
+    throw new NormalizationError(`Unrecognized target "${targetName}": not in ARO lookup`, { field: 'TargetName', row: rawRow, deviceType: 'PCR' });
   }
   const lookupEntry = aroLookup[canonicalKey];
 
@@ -201,6 +197,7 @@ function parseBiosensor(rawRow) {
   const lookupEntry = aroLookup[canonicalKey];
 
   const signal = fluorescence - blankFluorescence;
+  // threshold = 3x blank is the standard 3-sigma SNR cutoff for fluorescence assays
   const threshold = 3 * blankFluorescence || 10;
   const detected = signal > threshold && (!isNaN(thresholdCycle) ? thresholdCycle < 40 : true);
 
@@ -321,6 +318,7 @@ function parseMicrofluidic(rawRow) {
   const lookupEntry = aroLookup[canonicalKey];
 
   const ratio = positiveDroplets / totalDroplets;
+  // poisson correction: -ln(1-ratio) converts droplet fraction to copies/ul
   const concentration = -1 * Math.log(1 - ratio) * 1000;
   const detected = positiveDroplets > 0;
 

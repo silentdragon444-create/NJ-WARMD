@@ -20,7 +20,6 @@ export function validateRecord(record, siteHistory) {
   const flags = [];
   const issues = [];
 
-  // 1. Structural checks (REJECT if any fail)
   if (record === null || record === undefined || typeof record !== 'object') {
     return { valid: false, status: 'REJECTED', flags: ['NULL_RECORD'], record };
   }
@@ -53,7 +52,6 @@ export function validateRecord(record, siteHistory) {
     return { valid: false, status: 'REJECTED', flags: issues, record };
   }
 
-  // 2. Range checks (REJECT if out of valid range)
   if (record.ct_value !== null && record.ct_value !== undefined) {
     if (typeof record.ct_value !== 'number' || isNaN(record.ct_value) || record.ct_value < 0 || record.ct_value > 45) {
       issues.push('CT_OUT_OF_RANGE');
@@ -74,7 +72,7 @@ export function validateRecord(record, siteHistory) {
     return { valid: false, status: 'REJECTED', flags: issues, record };
   }
 
-  // 3. Outlier detection (FLAG only, don't reject)
+  // outlier detection flags but does not reject, keeping the record in for human review
   if (record.detected === true && record.concentration > 0) {
     const priorDetections = (siteHistory || []).filter(r => r.detected === true && r.concentration > 0);
     if (priorDetections.length >= 5) {
@@ -110,14 +108,14 @@ export function checkBillCompliance(record, siteHistory, siteRegistryObj, compli
     const newTier = getSchedulingTier(siteId, allRecords);
     escalationNeeded = newTier === 'weekly' && currentTier === 'monthly';
   } catch (e) {
-    // if compliance check fails, don't crash
+    // swallow — compliance check must not crash the upload pipeline
   }
 
   let clearanceAchieved = false;
   try {
     clearanceAchieved = hasAchievedClearance(siteId, allRecords);
   } catch (e) {
-    // if clearance check fails, don't crash
+    // swallow
   }
 
   let performanceCompliant = null;
@@ -125,7 +123,7 @@ export function checkBillCompliance(record, siteHistory, siteRegistryObj, compli
     const status = getComplianceStatus(siteId, allRecords, siteRegistryObj);
     performanceCompliant = status === 'compliant' || status === 'borderline';
   } catch (e) {
-    // if performance check fails, don't crash
+    // swallow
   }
 
   let complianceNote = '';

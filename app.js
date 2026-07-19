@@ -1,4 +1,3 @@
-// app.js - Central Orchestration, Tabs, Map, Trends, Upload, Compliance & Research Tabs
 import { siteRegistry } from './site_registry.js';
 import { normalizeBatch } from './normalize.js';
 import { validateRecord, checkBillCompliance } from './validate.js';
@@ -6,32 +5,27 @@ import { getSchedulingTier, isOverdue, hasAchievedClearance, getComplianceStatus
 import { getAlertForDrugClass } from './alerts.js';
 import neuroData from './neuro_data.js';
 
-// Application State
-let allRecords = []; // centralized in-memory store
-let activeAlerts = []; // generated system alerts
-let viewAsOfDate = "2026-12-31"; // default to end of pilot program
+let allRecords = [];
+let activeAlerts = [];
+let viewAsOfDate = "2026-12-31";
 let mapFilters = { siteType: "ALL", drugClass: "ALL", phase: "ALL" };
 let complianceFilters = { search: "", status: "ALL" };
 let sortColumn = "name";
 let sortDirection = "asc";
 
-// Chart.js global instances
 let statewideTrendsChart = null;
 let siteProfileChart = null;
 let researchScatterChart = null;
 
-// Leaflet global instances
 let mainMap = null;
 let mainMarkersLayer = null;
 let researchMap = null;
 let researchChoroplethLayer = null;
-let activeResearchMetric = "arg"; // "arg", "alzheimers", "parkinsons"
-let activeResearchDisease = "alzheimers"; // "alzheimers", "parkinsons"
+let activeResearchMetric = "arg";
+let activeResearchDisease = "alzheimers";
 
-// GeoJSON boundaries for NJ
 let njCountiesGeoJson = null;
 
-// Dynamic Population Served Helper (deterministic based on site ID index)
 function getPopulationServed(siteId) {
   const idx = parseInt(siteId.split('_')[1]) || 1;
   if (siteId.startsWith('WWTP')) {
@@ -46,46 +40,35 @@ function getPopulationServed(siteId) {
   return 10000;
 }
 
-// ----------------------------------------------------
-// App Initializer
-// ----------------------------------------------------
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // Dynamically import Sriv's large data.js file
-    console.log("Dynamically importing synthetic records...");
     const dataModule = await import('./data.js');
     allRecords = dataModule.syntheticRecords || [];
-    
-    // Hide spinner
     const spinner = document.getElementById('loading-overlay');
     if (spinner) {
       spinner.style.opacity = '0';
       setTimeout(() => spinner.style.display = 'none', 300);
     }
   } catch (err) {
-    console.warn("Large data.js could not be loaded, importing mock_data.js fallback:", err);
+    console.warn("data.js unavailable, falling back to mock_data.js:", err);
     try {
       const mockModule = await import('./mock_data.js');
       allRecords = mockModule.syntheticRecords || [];
     } catch (e) {
-      console.error("Critical: Failed to load mock data:", e);
+      console.error("failed to load mock data:", e);
     }
     const spinner = document.getElementById('loading-overlay');
     if (spinner) spinner.style.display = 'none';
   }
 
-  // Pre-load GeoJSON
   try {
     const response = await fetch('./nj_counties.geojson');
     njCountiesGeoJson = await response.json();
   } catch (e) {
-    console.error("Error loading NJ counties GeoJSON:", e);
+    console.error("failed to load NJ counties GeoJSON:", e);
   }
 
-  // Calculate Initial Alerts
   generateAlertsFromRecords();
-
-  // Initialize UI components
   initTabs();
   initMap();
   initTrends();
@@ -95,25 +78,20 @@ window.addEventListener('DOMContentLoaded', async () => {
   updateAlertBanner();
 });
 
-// ----------------------------------------------------
-// Tab Switching (Step 2 & 3)
-// ----------------------------------------------------
 function initTabs() {
   const tabs = document.querySelectorAll('#top-nav button');
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      // Toggle nav buttons
       tabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
 
-      // Toggle divs
       const targetTab = tab.getAttribute('data-tab');
       document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.add('hidden');
       });
       document.getElementById(`tab-${targetTab}`).classList.remove('hidden');
 
-      // Hook tab-specific re-renderers for leaflet/charts resizing
+      // leaflet and chart.js require an explicit size recalculation after a hidden element is shown
       if (targetTab === 'map' && mainMap) {
         mainMap.invalidateSize();
       } else if (targetTab === 'trends') {
@@ -132,13 +110,8 @@ function initTabs() {
   });
 }
 
-// ----------------------------------------------------
-// Alert Core System (Part 5: Steps 21 - 24)
-// ----------------------------------------------------
 function generateAlertsFromRecords() {
   activeAlerts = [];
-  // Scan all existing records for water system alerts
-  // WWTP or SURFACE_WATER, CONFIRMED detection
   const publicWaterRecords = allRecords.filter(r => 
     (r.site_type === 'WWTP' || r.site_type === 'SURFACE_WATER') &&
     r.detected === true &&
@@ -174,20 +147,18 @@ function updateAlertBanner() {
   
   if (activeAlerts.length > 0) {
     stickyAlert.style.display = 'flex';
-    alertText.innerText = `${activeAlerts.length} active public water system alerts — view details`;
+    alertText.innerText = `${activeAlerts.length} active public water system alerts: click to view details`;
     
-    // Check if any is critical
     const hasCritical = activeAlerts.some(a => a.severity === 'critical');
     if (hasCritical) {
-      stickyAlert.style.backgroundColor = '#dc2626'; // Bright Red
+      stickyAlert.style.backgroundColor = '#dc2626';
     } else {
-      stickyAlert.style.backgroundColor = '#f97316'; // Orange
+      stickyAlert.style.backgroundColor = '#f97316';
     }
   } else {
     stickyAlert.style.display = 'none';
   }
 
-  // Setup modal button
   const viewAlertsBtn = document.getElementById('view-alerts-btn');
   const alertsModal = document.getElementById('alerts-modal');
   const modalClose = document.getElementById('modal-close-btn');
@@ -219,8 +190,6 @@ function renderAlertCards() {
 
   activeAlerts.forEach(alert => {
     const severityClass = alert.severity === 'critical' ? 'critical' : (alert.severity === 'high' ? 'high' : 'moderate');
-    
-    // Construct email content
     const emailFrom = "NJ DEP Water Quality Alert System <alerts@dep.nj.gov>";
     const emailSubject = `URGENT: Water Quality Alert - ${alert.site_name} (${alert.municipality})`;
     const emailBody = `PUBLIC NOTICE: WATER QUALITY ADVISORY
@@ -234,7 +203,7 @@ ${alert.explanation}
 
 ${alert.whatToDo}
 
-Issued by the New Jersey Department of Environmental Protection (DEP) under the Clean Water Monitoring Pilot Program (Senate Bill S3745). For updates, contact your local water utility or the DEP hotline.`;
+Issued by the New Jersey Department of Environmental Protection (DEP) under the Clean Water Monitoring Pilot Program (P.L. 2026, c. 4000). For updates, contact your local water utility or the DEP hotline at 1-877-WARN-DEP.`;
 
     const card = document.createElement('div');
     card.className = 'alert-card';
@@ -247,8 +216,8 @@ Issued by the New Jersey Department of Environmental Protection (DEP) under the 
       </div>
       <div class="alert-card-body">
         <p style="font-weight: 700; color: #1e293b; margin-bottom: 0.5rem;">${alert.headline}</p>
-        <p style="margin-bottom: 0.75rem;"><strong>Scientific Context:</strong> ${alert.explanation}</p>
-        <p style="margin-bottom: 1rem;"><strong>Recommended Actions:</strong> ${alert.whatToDo}</p>
+        <p style="margin-bottom: 0.75rem;"><strong>About This Advisory:</strong> ${alert.explanation}</p>
+        <p style="margin-bottom: 1rem;"><strong>What You Should Do:</strong> ${alert.whatToDo}</p>
         
         <h4 style="font-size: 0.8rem; text-transform: uppercase; color: #64748b; margin-bottom: 0.5rem; font-weight: 600;">DEP Public Notification Email Template</h4>
         <div class="mock-email">
@@ -267,7 +236,6 @@ Issued by the New Jersey Department of Environmental Protection (DEP) under the 
     container.appendChild(card);
   });
 
-  // Attach copy event listeners
   container.querySelectorAll('.btn-copy').forEach(btn => {
     btn.onclick = () => {
       const alertId = btn.getAttribute('data-id');
@@ -288,11 +256,7 @@ Issued by the New Jersey Department of Environmental Protection (DEP) under the 
   });
 }
 
-// ----------------------------------------------------
-// Map View (Part 3: Steps 10 - 15)
-// ----------------------------------------------------
 function initMap() {
-  // Initialize map
   mainMap = L.map('map').setView([40.0, -74.5], 8);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
@@ -300,14 +264,13 @@ function initMap() {
 
   mainMarkersLayer = L.layerGroup().addTo(mainMap);
 
-  // Setup sliders and filters
   const dateSlider = document.getElementById('filter-date-slider');
   const dateDisplay = document.getElementById('slider-date-display');
   const siteFilter = document.getElementById('filter-site-type');
   const drugFilter = document.getElementById('filter-drug-class');
   const phaseFilter = document.getElementById('filter-phase');
 
-  // Convert slider step (0-730) into ISO string starting from 2025-01-01
+  // slider value (0-730) maps to days elapsed since 2025-01-01
   function updateSliderDate() {
     const startDate = new Date('2025-01-01T00:00:00');
     const elapsedDays = parseInt(dateSlider.value);
@@ -316,18 +279,13 @@ function initMap() {
     dateDisplay.innerText = viewAsOfDate;
   }
 
-  // Bind filter events
   const handleFilterChange = () => {
     updateSliderDate();
     mapFilters.siteType = siteFilter.value;
     mapFilters.drugClass = drugFilter.value;
     mapFilters.phase = phaseFilter.value;
-    
-    // Recompute alerts for the active slider date
     generateAlertsFromRecords();
     updateAlertBanner();
-    
-    // Re-render markers
     renderMarkers();
   };
 
@@ -336,12 +294,10 @@ function initMap() {
   drugFilter.addEventListener('change', handleFilterChange);
   phaseFilter.addEventListener('change', handleFilterChange);
 
-  // Drawer Close Button
   document.getElementById('drawer-close-btn').addEventListener('click', () => {
     document.getElementById('map-drawer').classList.remove('open');
   });
 
-  // Initial draw
   updateSliderDate();
   renderMarkers();
 }
@@ -350,65 +306,56 @@ function renderMarkers() {
   mainMarkersLayer.clearLayers();
 
   for (const [siteId, site] of Object.entries(siteRegistry)) {
-    // 1. Filter out by Site Type
     if (mapFilters.siteType !== 'ALL' && site.type !== mapFilters.siteType) continue;
-
-    // 2. Filter out by Pilot Phase
     if (mapFilters.phase !== 'ALL' && parseInt(site.phase) !== parseInt(mapFilters.phase)) continue;
 
-    // Get site records up to viewAsOfDate
     let siteRecords = allRecords.filter(r => r.site_id === siteId && r.sample_date <= viewAsOfDate);
 
-    // Apply drug class filter to records
     if (mapFilters.drugClass !== 'ALL') {
       siteRecords = siteRecords.filter(r => r.drug_class && r.drug_class.toLowerCase().includes(mapFilters.drugClass.toLowerCase()));
     }
 
-    // Determine status & color logic (Step 12)
-    let statusColor = "#9ca3af"; // Gray (No Data)
+    let statusColor = "#9ca3af";
     let statusText = "No Data";
     let statusBadgeClass = "badge-gray";
 
     if (siteRecords.length > 0) {
-      // Sort records by date descending
       siteRecords.sort((a, b) => new Date(b.sample_date) - new Date(a.sample_date));
       const latestSample = siteRecords[0];
 
       if (latestSample.detected === true) {
-        statusColor = "#ef4444"; // Red (detection in most recent)
+        statusColor = "#ef4444";
         statusText = "Alert (Recent Detection)";
         statusBadgeClass = "badge-alert";
       } else {
-        // Count detections in past 90 days relative to viewAsOfDate
         const viewTime = new Date(viewAsOfDate).getTime();
         const cutoffTime = viewTime - 90 * 24 * 60 * 60 * 1000;
-        
+
         const detectionsIn90Days = siteRecords.filter(r => {
           const sampleTime = new Date(r.sample_date).getTime();
           return r.detected === true && sampleTime >= cutoffTime && sampleTime <= viewTime;
         }).length;
 
         if (detectionsIn90Days > 1) {
-          statusColor = "#f97316"; // Orange (>1 detection in 90 days)
+          statusColor = "#f97316";
           statusText = "Flagged (>1 detection)";
           statusBadgeClass = "badge-flagged";
         } else if (detectionsIn90Days === 1) {
-          statusColor = "#eab308"; // Yellow (1 detection in 90 days)
+          statusColor = "#eab308";
           statusText = "Flagged (1 detection)";
           statusBadgeClass = "badge-flagged";
         } else {
-          statusColor = "#22c55e"; // Green (No detections in 90 days)
+          statusColor = "#22c55e";
           statusText = "Clear (No detections)";
           statusBadgeClass = "badge-clear";
         }
       }
     }
 
-    // Scale radius by population served (Step 12)
+    // sqrt scaling makes radius proportional to population served without huge outlier circles
     const population = getPopulationServed(siteId);
     const radius = Math.sqrt(population / 10000) + 4;
 
-    // Draw marker
     const marker = L.circleMarker([site.lat, site.lng], {
       radius: radius,
       fillColor: statusColor,
@@ -418,7 +365,6 @@ function renderMarkers() {
       fillOpacity: 0.8
     });
 
-    // Click marker opens sliding drawer (Step 13)
     marker.on('click', () => {
       openMapDrawer(siteId, site, statusText, statusBadgeClass, siteRecords);
     });
@@ -435,17 +381,14 @@ function openMapDrawer(siteId, site, statusText, statusBadgeClass, siteRecords) 
   document.getElementById('drawer-site-county').innerText = `${site.county} County`;
   document.getElementById('drawer-site-municipality').innerText = site.municipality;
 
-  // Status Badge
   const statusSpan = document.getElementById('drawer-status-badge');
   statusSpan.className = `badge ${statusBadgeClass}`;
   statusSpan.innerHTML = statusText.includes('Clear') ? `✔ ${statusText}` : `⚠ ${statusText}`;
 
-  // Next sample date (based on tier)
   const lastSampleText = document.getElementById('drawer-last-sample');
   const nextDueText = document.getElementById('drawer-next-due');
   const tierText = document.getElementById('drawer-tier');
 
-  // Compute all-time records to get proper tier
   const allSiteRecords = allRecords.filter(r => r.site_id === siteId && r.sample_date <= viewAsOfDate);
   const tier = getSchedulingTier(siteId, allSiteRecords);
   tierText.innerText = tier.toUpperCase();
@@ -453,8 +396,6 @@ function openMapDrawer(siteId, site, statusText, statusBadgeClass, siteRecords) 
   if (siteRecords.length > 0) {
     const lastDate = siteRecords[0].sample_date;
     lastSampleText.innerText = lastDate;
-    
-    // Add 7 days or 30 days
     const lastTime = new Date(lastDate);
     const offset = tier === 'weekly' ? 7 : 30;
     const nextTime = new Date(lastTime.getTime() + offset * 24 * 60 * 60 * 1000);
@@ -464,41 +405,38 @@ function openMapDrawer(siteId, site, statusText, statusBadgeClass, siteRecords) 
     nextDueText.innerText = "Immediate monitoring required";
   }
 
-  // Sparkline (Step 14)
   const sparklinePlaceholder = document.getElementById('drawer-sparkline-svg-placeholder');
   sparklinePlaceholder.innerHTML = buildSparkline(siteId, allSiteRecords);
 
   drawer.classList.add('open');
 }
 
-// 12-Week sparkline SVG generator (Step 14)
 function buildSparkline(siteId, siteRecords) {
-  // Let's divide the 84 days prior to viewAsOfDate into 12 7-day buckets
+  // 12 weekly buckets, each 20px wide, covering the 84 days prior to viewAsOfDate
   const endTime = new Date(viewAsOfDate).getTime();
   const weekMs = 7 * 24 * 60 * 60 * 1000;
-  
+
   let svgContent = `<svg width="240" height="24" viewBox="0 0 240 24" xmlns="http://www.w3.org/2000/svg">`;
-  
+
   for (let w = 0; w < 12; w++) {
     const bucketStart = endTime - (12 - w) * weekMs;
     const bucketEnd = endTime - (11 - w) * weekMs;
-    
-    // Check if there is any record in this 7-day interval
+
     const recordsInWeek = siteRecords.filter(r => {
       const sampleTime = new Date(r.sample_date).getTime();
       return sampleTime >= bucketStart && sampleTime < bucketEnd;
     });
 
-    let color = "#e2e8f0"; // Gray (No sample)
+    let color = "#e2e8f0";
     let titleText = `Week ${w+1}: No Sample`;
-    
+
     if (recordsInWeek.length > 0) {
       const hasDetection = recordsInWeek.some(r => r.detected === true);
       if (hasDetection) {
-        color = "#ef4444"; // Red (detection)
-        titleText = `Week ${w+1}: Detection Detected`;
+        color = "#ef4444";
+        titleText = `Week ${w+1}: Resistance Gene Detected`;
       } else {
-        color = "#22c55e"; // Green (clear)
+        color = "#22c55e";
         titleText = `Week ${w+1}: Clean Sample`;
       }
     }
@@ -513,11 +451,7 @@ function buildSparkline(siteId, siteRecords) {
   return svgContent;
 }
 
-// ----------------------------------------------------
-// Trend Analysis (Part 4: Steps 16 - 20)
-// ----------------------------------------------------
 function initTrends() {
-  // Populate site picker
   const siteSelect = document.getElementById('trends-site-select');
   siteSelect.innerHTML = '';
   
@@ -525,7 +459,7 @@ function initTrends() {
   sortedSiteIds.forEach(id => {
     const option = document.createElement('option');
     option.value = id;
-    option.innerText = `${id} - ${siteRegistry[id].name}`;
+    option.innerText = `${id}: ${siteRegistry[id].name}`;
     siteSelect.appendChild(option);
   });
 
@@ -700,20 +634,14 @@ function renderStatewideTrends() {
 
 function renderSiteProfileChart() {
   const siteRecords = allRecords.filter(r => r.site_id === selectedTrendsSite);
-  // Sort by date ascending
   siteRecords.sort((a, b) => new Date(a.sample_date) - new Date(b.sample_date));
-  
-  // Aggregate concentration by date for simplicity (if multiple targets exist on same day)
+
+  // collapse same-day records to the highest concentration so bars don't stack
   const dateMap = new Map();
   siteRecords.forEach(r => {
     if (!dateMap.has(r.sample_date)) {
-      dateMap.set(r.sample_date, {
-        date: r.sample_date,
-        conc: r.detected ? r.concentration : 0,
-        record: r
-      });
+      dateMap.set(r.sample_date, { date: r.sample_date, conc: r.detected ? r.concentration : 0, record: r });
     } else {
-      // Pick higher concentration
       const current = dateMap.get(r.sample_date);
       if (r.detected && r.concentration > current.conc) {
         current.conc = r.concentration;
@@ -729,10 +657,9 @@ function renderSiteProfileChart() {
     siteProfileChart.destroy();
   }
 
-  // Colors based on detection
   const barColors = chartData.map(d => d.conc > 0 ? '#ef4444' : '#22c55e');
 
-  // Let's pick a horizontal threshold line based on site type
+  // WWTP threshold is 10x higher than surface water per pilot program detection standards
   const siteType = siteRegistry[selectedTrendsSite]?.type;
   const threshold = siteType === 'WWTP' ? 500 : 50;
 
@@ -783,8 +710,7 @@ function renderSiteProfileChart() {
     }
   });
 
-  // Default detail card message
-  document.getElementById('record-details-container').innerHTML = 
+  document.getElementById('record-details-container').innerHTML =
     '<p style="color: #64748b; font-style: italic;">Click a bar on the concentration chart to inspect the raw laboratory results.</p>';
 }
 
@@ -799,7 +725,7 @@ function showRecordDetails(record) {
   container.innerHTML = `
     <div class="record-details-card">
       <h4>Record ID: ${record.record_id}</h4>
-      <div class="details-row"><span>Monitoring Node</span><span>${siteRegistry[record.site_id]?.name || record.site_id}</span></div>
+      <div class="details-row"><span>Monitoring Station</span><span>${siteRegistry[record.site_id]?.name || record.site_id}</span></div>
       <div class="details-row"><span>Sample Date</span><span>${record.sample_date}</span></div>
       <div class="details-row"><span>Device Type</span><span>${record.device_type}</span></div>
       <div class="details-row"><span>Target Gene</span><span>${record.target_gene}</span></div>
@@ -843,12 +769,9 @@ function renderCountyAggregates() {
   });
 
   const countiesList = Array.from(countiesMap.values());
-  
-  // Calculate rate and primary drug class
+
   countiesList.forEach(c => {
     c.rate = c.total > 0 ? (c.detections / c.total) * 100 : 0;
-    
-    // Primary drug class
     let topClass = "None";
     let maxCount = 0;
     c.drugClasses.forEach((count, key) => {
@@ -858,12 +781,9 @@ function renderCountyAggregates() {
       }
     });
     c.topClass = topClass;
-
-    // Compliance rating
     c.compliance = c.rate > 10 ? 'non_compliant' : (c.rate >= 5 ? 'borderline' : 'compliant');
   });
 
-  // Sort descending by detection rate
   countiesList.sort((a, b) => b.rate - a.rate);
 
   countiesList.forEach(c => {
@@ -885,9 +805,6 @@ function renderCountyAggregates() {
   });
 }
 
-// ----------------------------------------------------
-// Upload Tab Interface (Part 2: Steps 5 - 9)
-// ----------------------------------------------------
 let pendingAccepted = [];
 let pendingErrors = [];
 
@@ -920,7 +837,6 @@ function initUpload() {
     }
   });
 
-  // Error Accordion Toggle
   const accordionToggle = document.getElementById('errors-accordion-toggle');
   const accordionBody = document.getElementById('errors-accordion-body');
   const accordionArrow = document.getElementById('accordion-arrow');
@@ -935,7 +851,6 @@ function initUpload() {
     }
   };
 
-  // Submit button
   document.getElementById('preview-submit-btn').onclick = submitPendingRecords;
   document.getElementById('preview-cancel-btn').onclick = () => {
     document.getElementById('preview-panel').style.display = 'none';
@@ -967,27 +882,23 @@ function processFile(file) {
         parsedRows = parseResult.data;
       }
 
-      // Normalize Batch
       const uploadMeta = {
         submittedBy: operatorName,
         uploadTimestamp: new Date().toISOString()
       };
-      
+
       const result = normalizeBatch(parsedRows, deviceType, uploadMeta);
-      
-      // Perform validation and separate errors
+
       pendingAccepted = [];
       pendingErrors = [...result.errors];
 
       result.records.forEach((record, index) => {
-        // Fetch historical records for this site
         const siteHistory = allRecords.filter(r => r.site_id === record.site_id);
         const valResult = validateRecord(record, siteHistory);
-        
+
         if (valResult.valid) {
-          pendingAccepted.push(valResult.record); // push the updated validated record
+          pendingAccepted.push(valResult.record);
         } else {
-          // Push validation rejects as errors
           pendingErrors.push({
             row: JSON.parse(record.raw_device_fields || '{}'),
             rowIndex: index,
@@ -1000,7 +911,7 @@ function processFile(file) {
       showUploadPreviewPanel(parsedRows.length);
 
     } catch (err) {
-      alert(`Fatal Error Parsing Lab File: ${err.message}`);
+      alert(`Unable to process this lab file. Please verify the file format and try again. (${err.message})`);
     }
   };
 
@@ -1008,17 +919,14 @@ function processFile(file) {
 }
 
 function showUploadPreviewPanel(totalRows) {
-  // Hide success banner
   document.getElementById('upload-success-banner').style.display = 'none';
 
   const previewPanel = document.getElementById('preview-panel');
   previewPanel.style.display = 'block';
 
-  // Summary row
   const summaryRow = document.getElementById('preview-summary-row');
   summaryRow.innerText = `${totalRows} records processed · ${pendingAccepted.length} accepted · ${pendingErrors.length} errors`;
 
-  // Render first 10 accepted
   const tbody = document.querySelector('#preview-table tbody');
   tbody.innerHTML = '';
   
@@ -1046,7 +954,6 @@ function showUploadPreviewPanel(totalRows) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b;">No accepted records from this batch.</td></tr>';
   }
 
-  // Setup errors accordion
   const errorsAccordion = document.getElementById('errors-accordion');
   const errorCountBadge = document.getElementById('error-count-badge');
   const errorBody = document.getElementById('errors-accordion-body');
@@ -1060,7 +967,7 @@ function showUploadPreviewPanel(totalRows) {
       const errItem = document.createElement('div');
       errItem.className = 'error-item';
       errItem.innerHTML = `
-        <div style="font-weight:600; color:#b91c1c; font-size:0.8rem;">Row Index: ${err.rowIndex + 1} — ${err.error}</div>
+        <div style="font-weight:600; color:#b91c1c; font-size:0.8rem;">Row Index: ${err.rowIndex + 1}: ${err.error}</div>
         <pre>${JSON.stringify(err.row, null, 2)}</pre>
       `;
       errorBody.appendChild(errItem);
@@ -1078,30 +985,22 @@ function submitPendingRecords() {
   pendingAccepted.forEach(record => {
     const siteId = record.site_id;
     affectedSites.add(siteRegistry[siteId]?.name || siteId);
-    
-    // Check bill compliance
     const siteHistory = allRecords.filter(r => r.site_id === siteId);
     const compResult = checkBillCompliance(
-      record, 
-      siteHistory, 
+      record,
+      siteHistory,
       siteRegistry,
       { getSchedulingTier, hasAchievedClearance, getComplianceStatus }
     );
-
-    // Apply compliance notes to record
     record.compliance_status = compResult.performanceCompliant === false ? 'non_compliant' : (getComplianceStatus(siteId, [...siteHistory, record], siteRegistry));
     record.compliance_note = compResult.complianceNote;
     record.clearance_achieved = compResult.clearanceAchieved;
-
     if (compResult.escalationNeeded) {
       escalationsCount++;
     }
-
-    // Append to central store
     allRecords.push(record);
   });
 
-  // Calculate alerts on the newly added records (Step 9 & 21)
   const isPublicWaterRecord = r => (r.site_type === 'WWTP' || r.site_type === 'SURFACE_WATER');
   pendingAccepted.forEach(record => {
     if (isPublicWaterRecord(record) && record.detected === true && record.detection_status === 'CONFIRMED') {
@@ -1112,51 +1011,38 @@ function submitPendingRecords() {
     }
   });
 
-  // Re-generate global alert cache based on active records
   generateAlertsFromRecords();
   updateAlertBanner();
-
-  // Trigger UI Updates
   renderMarkers();
 
-  // Hide upload preview panel
   document.getElementById('preview-panel').style.display = 'none';
 
-  // Display success banner notification (Step 9)
   const successBanner = document.getElementById('upload-success-banner');
   const detailsList = document.getElementById('upload-success-details');
-  
   detailsList.innerHTML = '';
-  
-  // Sites affected
+
   const sitesLi = document.createElement('li');
   sitesLi.innerHTML = `<strong>Affected Sites (${affectedSites.size}):</strong> ${Array.from(affectedSites).join(', ')}`;
   detailsList.appendChild(sitesLi);
 
-  // Escalation triggered
   const escLi = document.createElement('li');
-  escLi.innerHTML = `<strong>Scheduling Escalation:</strong> ${escalationsCount > 0 
-    ? `<span style="color:#d97706; font-weight:700;">⚠ ${escalationsCount} site(s) escalated monthly ➔ weekly</span>` 
+  escLi.innerHTML = `<strong>Scheduling Escalation:</strong> ${escalationsCount > 0
+    ? `<span style="color:#d97706; font-weight:700;">⚠ ${escalationsCount} site(s) escalated monthly ➔ weekly</span>`
     : 'None triggered.'}`;
   detailsList.appendChild(escLi);
 
-  // Alerts generated
   const alertLi = document.createElement('li');
-  alertLi.innerHTML = `<strong>Detections Alert Generation:</strong> ${newAlertDetections.length > 0 
-    ? `<span style="color:#dc2626; font-weight:700;">⚠ Alerts Generated: ${newAlertDetections.join(', ')}</span>` 
+  alertLi.innerHTML = `<strong>Detections Alert Generation:</strong> ${newAlertDetections.length > 0
+    ? `<span style="color:#dc2626; font-weight:700;">⚠ Alerts Generated: ${newAlertDetections.join(', ')}</span>`
     : 'No alert-level detections logged.'}`;
   detailsList.appendChild(alertLi);
 
   successBanner.style.display = 'block';
 
-  // Reset arrays
   pendingAccepted = [];
   pendingErrors = [];
 }
 
-// ----------------------------------------------------
-// Compliance Tracker (Part 6: Steps 25 - 28)
-// ----------------------------------------------------
 function initCompliance() {
   const searchInput = document.getElementById('compliance-search-input');
   const statusFilter = document.getElementById('compliance-status-filter');
@@ -1170,7 +1056,6 @@ function initCompliance() {
   searchInput.addEventListener('input', filterHandler);
   statusFilter.addEventListener('change', filterHandler);
 
-  // Sorting handlers (Step 28)
   const headers = document.querySelectorAll('#compliance-directory-table th');
   headers.forEach(header => {
     header.addEventListener('click', () => {
@@ -1201,7 +1086,6 @@ function initCompliance() {
 }
 
 function renderComplianceStats() {
-  // Sites currently meeting 90% reduction standard (detection rate <= 10% in last 90 days)
   let meetingCount = 0;
   let totalSites = Object.keys(siteRegistry).length;
 
@@ -1216,8 +1100,6 @@ function renderComplianceStats() {
   const rate = totalSites > 0 ? (meetingCount / totalSites) * 100 : 0;
   document.getElementById('metric-compliance-rate').innerText = `${rate.toFixed(0)}%`;
   document.getElementById('metric-active-alerts').innerText = activeAlerts.length;
-  
-  // Days remaining (S3745 pilot program is 2 years, or 730 days)
   const stats = getPilotDayStats('2025-01-01');
   document.getElementById('metric-days-left').innerText = `${stats.daysRemaining} days`;
 }
@@ -1230,16 +1112,9 @@ function renderComplianceDirectory() {
 
   for (const [siteId, site] of Object.entries(siteRegistry)) {
     const allSiteRecords = allRecords.filter(r => r.site_id === siteId && r.sample_date <= viewAsOfDate);
-    
-    // Sort records descending
     allSiteRecords.sort((a, b) => new Date(b.sample_date) - new Date(a.sample_date));
-    
     const lastSampleDate = allSiteRecords.length > 0 ? allSiteRecords[0].sample_date : '-';
-    
-    // Get tier
     const tier = getSchedulingTier(siteId, allSiteRecords);
-    
-    // Next due date
     let nextDueDate = '-';
     if (allSiteRecords.length > 0) {
       const offset = tier === 'weekly' ? 7 : 30;
@@ -1249,7 +1124,6 @@ function renderComplianceDirectory() {
       nextDueDate = 'Immediate';
     }
 
-    // 90 day detection rate
     const viewTime = new Date(viewAsOfDate).getTime();
     const cutoffTime = viewTime - 90 * 24 * 60 * 60 * 1000;
     const recordsIn90Days = allSiteRecords.filter(r => {
@@ -1290,7 +1164,6 @@ function renderComplianceDirectory() {
     });
   }
 
-  // Sort compliance data (Step 28)
   siteRowsData.sort((a, b) => {
     let valA = a[sortColumn];
     let valB = b[sortColumn];
@@ -1339,13 +1212,11 @@ function renderComplianceDirectory() {
       <td><span class="badge ${statusBadgeClass}">${statusBadge}</span></td>
     `;
 
-    // Accordion expand row (Step 27)
     const expandTr = document.createElement('tr');
     expandTr.className = 'expandable-row';
     expandTr.style.display = 'none';
     expandTr.id = `expand-site-${row.id}`;
-    
-    // Sort site history ascending for history table
+
     const sortedHist = [...row.records].sort((a,b) => new Date(a.sample_date) - new Date(b.sample_date));
     let miniTableRows = '';
     sortedHist.forEach(r => {
@@ -1393,9 +1264,7 @@ function renderComplianceDirectory() {
       </td>
     `;
 
-    // Row Click Toggle
     tr.onclick = (e) => {
-      // Don't expand if click was on action badges/buttons
       if (e.target.closest('button')) return;
       
       const expandRow = document.getElementById(`expand-site-${row.id}`);
@@ -1410,7 +1279,6 @@ function renderComplianceDirectory() {
     tbody.appendChild(expandTr);
   });
 
-  // Attach CSV Download click listeners (Step 27)
   tbody.querySelectorAll('.btn-csv').forEach(btn => {
     btn.onclick = () => {
       const siteId = btn.getAttribute('data-id');
@@ -1423,7 +1291,6 @@ function downloadSiteRecordsCSV(siteId) {
   const siteRecords = allRecords.filter(r => r.site_id === siteId);
   const site = siteRegistry[siteId];
 
-  // Build CSV headers & content
   const headers = [
     "Record ID", "Site ID", "Site Name", "County", "Municipality", "Sample Date",
     "Device Type", "Target Gene", "ARO Number", "Drug Class", "Detected", 
@@ -1440,7 +1307,6 @@ function downloadSiteRecordsCSV(siteId) {
     csvContent += row.join(",") + "\n";
   });
 
-  // Create Blob & Trigger download
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1452,11 +1318,7 @@ function downloadSiteRecordsCSV(siteId) {
   URL.revokeObjectURL(url);
 }
 
-// ----------------------------------------------------
-// Research Tab (Part 7: Steps 29 - 33)
-// ----------------------------------------------------
 function initResearch() {
-  // Leaflet Research Map
   researchMap = L.map('research-map').setView([40.0, -74.5], 7.5);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
@@ -1464,7 +1326,6 @@ function initResearch() {
 
   researchChoroplethLayer = L.layerGroup().addTo(researchMap);
 
-  // Set up metric toggle buttons
   const btnArg = document.getElementById('btn-metric-arg');
   const btnAlz = document.getElementById('btn-metric-alzheimers');
   const btnPk = document.getElementById('btn-metric-parkinsons');
@@ -1474,23 +1335,10 @@ function initResearch() {
     activeBtn.classList.add('active');
   };
 
-  btnArg.onclick = () => {
-    activeResearchMetric = 'arg';
-    updateButtons(btnArg);
-    renderResearchChoropleth();
-  };
-  btnAlz.onclick = () => {
-    activeResearchMetric = 'alzheimers';
-    updateButtons(btnAlz);
-    renderResearchChoropleth();
-  };
-  btnPk.onclick = () => {
-    activeResearchMetric = 'parkinsons';
-    updateButtons(btnPk);
-    renderResearchChoropleth();
-  };
+  btnArg.onclick = () => { activeResearchMetric = 'arg'; updateButtons(btnArg); renderResearchChoropleth(); };
+  btnAlz.onclick = () => { activeResearchMetric = 'alzheimers'; updateButtons(btnAlz); renderResearchChoropleth(); };
+  btnPk.onclick = () => { activeResearchMetric = 'parkinsons'; updateButtons(btnPk); renderResearchChoropleth(); };
 
-  // Scatter plot disease radio buttons
   document.querySelectorAll('input[name="scatter-disease-select"]').forEach(radio => {
     radio.addEventListener('change', () => {
       activeResearchDisease = radio.value;
@@ -1499,11 +1347,8 @@ function initResearch() {
   });
 }
 
-// Calculate ARG detection rates by county
 function getCountyArgRates() {
   const rates = {};
-  
-  // Initialize all counties with 0
   Object.keys(neuroData).forEach(county => {
     rates[county] = { total: 0, detections: 0 };
   });
@@ -1526,9 +1371,7 @@ function getCountyArgRates() {
   return finalRates;
 }
 
-// Color scale functions (Step 31)
 function getArgColor(val) {
-  // Orange scale (ARG rate)
   return val > 30 ? '#7f2d1d' :
          val > 20 ? '#ba4a00' :
          val > 15 ? '#d35400' :
@@ -1538,8 +1381,6 @@ function getArgColor(val) {
 }
 
 function getDiseaseColor(val) {
-  // Purple scale (Alzheimer's/Parkinson's)
-  // Alzheimer's rates are mostly between 9.0 and 42.0. Parkinson's is 6.5.
   return val > 35 ? '#4a148c' :
          val > 25 ? '#6a1b9a' :
          val > 20 ? '#8e24aa' :
@@ -1599,7 +1440,6 @@ function renderResearchChoropleth() {
   }).addTo(researchChoroplethLayer);
 }
 
-// Least-squares regression and R2 calculation (Step 32)
 function calculateRegression(points) {
   const n = points.length;
   if (n < 2) return { m: 0, b: 0, r2: 0, linePoints: [] };
